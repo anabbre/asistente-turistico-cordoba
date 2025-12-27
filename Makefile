@@ -1,5 +1,3 @@
-.PHONY: venv install extract chunk create reset upsert query
-
 PY=python
 
 venv:
@@ -9,10 +7,10 @@ install: venv
 	. .venv/bin/activate && pip install -U pip && pip install -r requirements.txt
 
 extract:
-	. .venv/bin/activate && PYTHONPATH=src $(PY) -m informe_sector_audiovisual_2025.ingest_pdf data/raw/informe_sector_audiovisual_2025.pdf
+	. .venv/bin/activate && PYTHONPATH=src $(PY) -m cordoba_rag.ingest_pdf docs/cordoba
 
 chunk:
-	. .venv/bin/activate && PYTHONPATH=src $(PY) -m informe_sector_audiovisual_2025.chunking
+	. .venv/bin/activate && PYTHONPATH=src $(PY) -m cordoba_rag.chunking
 
 create:
 	. .venv/bin/activate && PYTHONPATH=src $(PY) scripts/create_qdrant_collection.py
@@ -25,3 +23,6 @@ upsert:
 
 query:
 	. .venv/bin/activate && PYTHONPATH=src $(PY) scripts/query_points.py
+
+api:
+	. .venv/bin/activate && PYTHONPATH=src uvicorn cordoba_rag.api_rag:app --reload --port 8000

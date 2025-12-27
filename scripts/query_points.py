@@ -1,28 +1,27 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter
-from informe_sector_audiovisual_2025.embeddings import embed
+from cordoba_rag.embeddings import embed
+import os
 
-COLLECTION = "audiovisual_2025"
+COLLECTION = os.getenv("QDRANT_COLLECTION", "cordoba_turismo")
 
 
 def main():
     """
     Script de prueba rápida para comprobar que la búsqueda semántica funciona.
-    - Genera embedding de una frase ejemplo
-    - Realiza query en Qdrant (top=3)
-    - Muestra el texto más relevante y su score
     """
-    q = "tendencias de empleo en el sector audiovisual en 2025"
-    client = QdrantClient(host="localhost", port=6333)
+    q = "¿Qué es la ruta de Manolete en Córdoba?"
+    client = QdrantClient(host=os.getenv("QDRANT_HOST", "localhost"),
+                          port=int(os.getenv("QDRANT_PORT", "6333")))
     vec = embed([q])[0]
 
     res = client.query_points(
         collection_name=COLLECTION,
-        query=vec,  
+        query=vec,
         limit=3,
         with_payload=True,
         with_vectors=False,
-        query_filter=Filter(should=[]),  # sin filtros adicionales
+        query_filter=Filter(should=[]),
     ).points
 
     for i, r in enumerate(res, 1):

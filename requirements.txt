@@ -1,12 +1,26 @@
+# Vector DB / embeddings
 qdrant-client
 sentence-transformers
+
+# PDF ingestion
+pymupdf
 pdfminer.six
-PyMuPDF
+
+# API / web
 fastapi
 uvicorn
+flask
+python-multipart
+requests
+
+# Utils
 python-dotenv
 rich
-typer 
-google-generativeai==0.8.3
+typer
 numpy
-python-multipart 
+
+# LLM
+google-generativeai==0.8.3
+
+# Azure Speech
+azure-cognitiveservices-speech

@@ -1,4 +1,6 @@
+# =====================
 # Python / tools
+# =====================
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,22 +10,32 @@ __pycache__/
 .mypy_cache/
 .coverage
 
-# Entornos
+# =====================
+# Entornos virtuales
+# =====================
 .venv/
 venv/
 
+# =====================
 # Secretos
+# =====================
 .env
 !.env.example
 
+# =====================
 # OS
+# =====================
 .DS_Store
 
-# Datos locales
+# =====================
+# Datos locales / generados
+# =====================
 data/interim/*
 data/processed/*
-qdrant_data/** 
-!data/raw/
+qdrant_data/*
+qdrant_data_BACKUP/*
 
+# =====================
 # VSCode
+# =====================
 .vscode/

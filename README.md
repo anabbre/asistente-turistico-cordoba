@@ -1,319 +1,235 @@
-# RAG Audiovisual 2025 (Qdrant + Gemini)
+# 🏛️ Asistente Turístico de Córdoba (IA Conversacional + Voz + RAG)
 
-**Objetivo**: Sistema RAG (Retrieval‑Augmented Generation) que indexa el *Informe del Sector Audiovisual 2025* y permite hacer preguntas en español usando **Qdrant** como base vectorial y **Google Gemini** como LLM. Incluye endpoints para consulta y **actualización continua** de datos (upsert desde texto o PDF), métricas y limpieza por fuente.
+Proyecto final de la asignatura **Herramientas de IA Clásica** del Máster en **IA, Cloud Computing y DevOps**.
 
-![alt text](pictures/image-2.png)
----
-
-## 🧭 Índice
-
-- [Arquitectura](#arquitectura)
-- [Requisitos](#requisitos)
-- [Estructura del proyecto](#estructura-del-proyecto)
-- [Configuración](#configuración)
-- [Arranque rápido](#arranque-rápido)
-- [Ingesta / actualización de datos](#ingesta--actualización-de-datos)
-- [API (FastAPI)](#api-fastapi)
-  - [/health](#get-health)
-  - [/models](#get-models)
-  - [/ask](#post-ask)
-  - [/upsert](#post-upsert)
-  - [/upsert_pdf](#post-upsert_pdf)
-  - [/delete_by_source](#post-delete_by_source)
-  - [/stats](#get-stats)
-- [Cómo funciona la recuperación](#cómo-funciona-la-recuperación)
-- [Solución de problemas](#solución-de-problemas)
+Este repositorio contiene el desarrollo de un **asistente turístico inteligente sobre la ciudad de Córdoba**, capaz de interactuar mediante **texto y voz**, integrando técnicas de **RAG (Retrieval-Augmented Generation)**, una **base de datos vectorial**, y servicios de **IA generativa y voz**.
 
 ---
 
-## Arquitectura
+## 🎯 Objetivo del proyecto
 
-**Flujo**:
+El objetivo es construir un asistente que:
 
-1. Usuario lanza una **pregunta** → `POST /ask`.
-2. La pregunta se **vectoriza** con `sentence-transformers`.
-3. Qdrant realiza **búsqueda semántica** (k alta) y el servicio hace **re‑ranking local** por coseno.
-4. Se forma un **contexto** con fragmentos top‑k (y fuentes).
-5. **Gemini** genera la respuesta **solo** con ese contexto (si no está, lo indica).
-
-**Actualización**:
-
-- `POST /upsert`: ingesta de texto (ya troceado o a trocear) con metadatos.
-- `POST /upsert_pdf`: ingesta desde un PDF (multipart).
-- `POST /delete_by_source`: limpieza de contenidos por `source`.
-- `GET /stats`: conteos y diagnóstico rápido.
+- Responda preguntas turísticas en **lenguaje natural**.
+- Utilice **únicamente información previamente indexada** (evitando alucinaciones).
+- Permita interacción por **texto y voz**.
+- Esté disponible vía **API REST**, **Telegram** y **Dialogflow**.
+- Integre servicios reales de IA clásica y moderna.
 
 ---
 
-## Requisitos
+## 🚀 Funcionalidades principales
 
-- Python 3.10–3.12 (⚠️ En 3.14 algunas libs aún están madurando)
-- Docker (para Qdrant) y `docker compose`
-- Cuenta de Google AI Studio y **GEMINI_API_KEY**
-
-**Python**:
-
-```bash
-python -m venv .venv
-# macOS / Linux
-source .venv/bin/activate
-# Windows (PowerShell)
-# .venv\Scripts\Activate.ps1
-
-pip install -r requirements.txt
-```
-
-**Qdrant** (local):
-
-```bash
-docker compose up -d    # levanta Qdrant con volumen en ./qdrant_data
-```
+- 🔎 **RAG (Retrieval-Augmented Generation)** sobre documentación local.
+- 💬 Consultas por **texto**.
+- 🎙️ Consultas por **voz** (STT + TTS).
+- 🤖 Integración con **Telegram** (texto y notas de voz).
+- 🧩 Integración con **Dialogflow ES** mediante webhook.
+- 🗂️ Persistencia vectorial local con **Qdrant**.
+- 🐳 Ejecución en entorno local con **Docker y Python**.
 
 ---
 
-## Estructura del proyecto
+## 🧠 Arquitectura general
+
+**Flujo de texto**
+1. Entrada del usuario.
+2. Generación de embedding.
+3. Recuperación semántica en Qdrant.
+4. Construcción de contexto.
+5. Generación de respuesta con Gemini.
+
+**Flujo de voz**
+1. Audio → Speech-to-Text (Azure).
+2. Texto → pipeline RAG.
+3. Respuesta → Text-to-Speech (Azure).
+4. Devolución de audio WAV.
+
+---
+
+## 🧰 Tecnologías utilizadas
+
+- **Python 3.10+**
+- **FastAPI**
+- **Google Gemini** (`gemini-2.5-flash`)
+- **Qdrant** (Vector DB)
+- **Sentence Transformers**
+  - `intfloat/multilingual-e5-small` (optimizado para español)
+- **Azure Cognitive Services – Speech**
+- **Telegram Bot API**
+- **Dialogflow ES**
+- **Docker & Docker Compose**
+- **ngrok**
+
+---
+
+## 📁 Estructura del proyecto
 
 ```text
-.
-├─ .env                                          # variables locales 
-├─ .env.example                                  # plantilla de variables 
-├─ docker-compose.yaml                           # Qdrant local
-├─ Makefile                                      # atajos de desarrollo 
-├─ pictures/
-│  ├─ image.png                                  # ejemplo de petición a /ask
-│  ├─ image-1.png                                # ejemplo de respuesta de /ask
-│  ├─ image-2.png                                # UI de endpoints
-│  └─ Qdrant.png                                 # interfaz en Qdrant 
-├─ qdrant_config/
-│  └─ config.yaml                                # configuración avanzada 
-├─ qdrant_data/                                  # datos persistentes de Qdrant (se crea al arrancar)
+ASISTENTE-TURISTICO-CORDOBA
 ├─ data/
-│  ├─ raw/
-│  │  └─ informe_sector_audiovisual_2025.pdf
-│  ├─ interim/
-│  │  ├─ informe_sector_audiovisual_2025.txt
-│  │  └─ informe_sector_audiovisual_2025.json
-│  └─ processed/
-│     └─ chunks.jsonl                             # trozos ya procesados (si se usa flujo offline)
-├─ scripts/
-│  ├─ create_qdrant_collection.py                 # crea/asegura colección + índice text
-│  ├─ metadata_enricher.py                        # ejemplo de enriquecimiento de payload
-│  ├─ query_points.py                             # prueba de consultas a Qdrant
-│  ├─ reset_collection.py                         # recrea (borra datos)
-│  └─ upsert_chunks.py                            # ingesta desde JSONL (offline)
-├─ src/informe_sector_audiovisual_2025/
-│  ├─ api_rag.py                                  # FastAPI: /ask, /upsert, /upsert_pdf, /delete_by_source, /stats
-│  ├─ chunking.py                                 # troceo configurable (tamaño, solape, normalización)
-│  ├─ embeddings.py                               # carga y uso del modelo de embeddings
-│  ├─ ingest_pdf.py                               # extracción de texto con PyMuPDF/pdfminer.six
-│  ├─ config.py                                   # utilidades de configuración
-│  └─ __init__.py
-├─ pyproject.toml                                 # metadatos del proyecto (nombre, versión) 
-├─ requirements.txt                               # dependencias de ejecución
-└─ docs/
-   └─ memoria-informe-audiovisual-2025.pdf        # memoria del proyecto
-
+│  ├─ interim/               # Texto y JSON intermedio
+│  ├─ processed/             # Chunks finales (JSONL)
+│  └─ audio/                 # Audios de prueba
+├── docs/
+│   ├── cordoba/             # PDFs originales
+│   └── memoria/             # Memoria del proyecto
+├─ qdrant_config/            # Configuración de Qdrant
+├─ qdrant_data/              # Persistencia local
+├── scripts/                 # Scripts de ingesta y pruebas
+│   ├── stt_file_test.py
+│   ├── tts_test.py
+│   └── ingest_chunks.py
+├─ src/cordoba_rag/
+│  ├─ api_rag.py             # API principal FastAPI
+│  ├─ telegram_webhook.py    # Webhook de Telegram
+│  ├─ api.py                 # Punto de entrada alternativo
+│  ├─ chunking.py            # Lógica de troceado
+│  ├─ embeddings.py          # Cálculo de embeddings
+│  ├─ ingest_pdf.py          # Extracción de texto
+│  └─ services/
+│     ├─ rag_service.py      # Lógica RAG (ask, stats, upsert…)
+│     ├─ voice_service.py    # STT y TTS con Azure
+│     └─ __init__.py
+├─ docker-compose.yaml
+├─ Makefile
+├─ requirements.txt
+├─ .env.example
+└─ README.md
 ```
 
 ---
 
-## 🧰 Scripts de procesamiento e indexado
+## ⚙️ Configuración
 
-Estos scripts permiten ejecutar el flujo **offline** paso a paso antes de usar la API.  
-Cada uno puede lanzarse manualmente con `PYTHONPATH=src python scripts/<nombre>.py`.
+1. Crear el archivo de entorno:
 
-| Orden | Script | Descripción breve |
-|:--:|:--|:--|
-| **1️⃣** | `ingest_pdf.py` | Extrae texto del PDF original y genera:<br>→ `data/interim/informe_sector_audiovisual_2025.json` (páginas)<br>→ `data/interim/informe_sector_audiovisual_2025.txt` (texto plano concatenado). |
-| **2️⃣** | `chunking.py` | Divide el texto plano en fragmentos (~1000 caracteres, con solape de 150). Crea `data/processed/chunks.jsonl`. |
-| **3️⃣** | `metadata_enricher.py` | Asocia cada fragmento con su número de página y añade metadatos (`page`, `section`, `source`). Sobrescribe `chunks.jsonl` enriquecido. |
-| **4️⃣** | `create_qdrant_collection.py` | Crea (si no existe) la colección `audiovisual_2025` en Qdrant, con vector size y métrica `COSINE`. Añade un índice `MatchText` sobre `text`. |
-| **5️⃣** | `upsert_chunks.py` | Inserta en Qdrant los chunks ya enriquecidos. Calcula embeddings, genera IDs deterministas y realiza `upsert`. |
-| **6️⃣** | `query_points.py` | Verifica la indexación consultando Qdrant con una frase de prueba. Devuelve textos más relevantes con su score. |
-| **7️⃣** | `reset_collection.py` *(opcional)* | Elimina y recrea la colección desde cero. Útil para reiniciar la base vectorial durante pruebas. |
+```bash
+cp .env.example .env
+```
 
-📌 **Consejo**:  
-Antes de lanzar la API FastAPI, asegúrate de haber ejecutado los pasos **1 → 5**, para que la colección esté lista y poblada.
-
----
-
-## Configuración
-
-Crea un `.env` en la raíz (o copia desde `.env.example`):
+2. Completar las variables:
 
 ```env
 # Gemini
-GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-GEMINI_MODEL=models/gemini-2.5-flash
+GEMINI_API_KEY=TU_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+
+# Embeddings
+EMBEDDINGS_MODEL=intfloat/multilingual-e5-small
 
 # Qdrant
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
-QDRANT_COLLECTION=audiovisual_2025
+QDRANT_COLLECTION=cordoba_turismo
 
-# Embeddings
-EMBEDDINGS_MODEL=intfloat/multilingual-e5-small
+# Telegram
+TELEGRAM_BOT_TOKEN=TU_TOKEN
+
+# Azure Speech
+SPEECH_KEY=TU_SPEECH_KEY
+SPEECH_REGION=swedencentral
 ```
-
-> Puedes listar modelos disponibles con `GET /models` y cambiar `GEMINI_MODEL` si lo deseas.
 
 ---
 
-## Arranque rápido
-
-1) **Levantar Qdrant**
+## 🐳 Qdrant (Vector Database)
 
 ```bash
 docker compose up -d
 ```
 
-![alt text](pictures/Qdrant.png)
-
-2) **Crear/asegurar la colección e índice de texto**
-
-```bash
-PYTHONPATH=src python scripts/create_qdrant_collection.py
+Dashboard:
 ```
-
-Este script crea la colección `audiovisual_2025` con distancia **COSINE** y un índice de payload sobre el campo `text` para búsquedas `MatchText`.
-
-3) **Lanzar la API**
-
-```bash
-PYTHONPATH=src uvicorn informe_sector_audiovisual_2025.api_rag:app --reload
-```
-
-Abre `http://127.0.0.1:8000/docs` para la UI.
-
----
-
-## Ingesta / actualización de datos
-
-### A) Upsert de **texto** (troceado automático)
-
-```bash
-curl -X POST "http://127.0.0.1:8000/upsert" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "text": "Este es un texto largo con datos que quiero indexar...",
-        "source": "nota_prensa_2025",
-        "max_chars": 1000,
-        "overlap": 120
-      }'
-```
-
-- Si pasas `text` (string), el servicio lo **trocea** y lo indexa.
-- Si pasas `texts` (lista de trozos), los indexa tal cual.
-- Añade metadatos útiles: `source`, `page`, `chunk_id`, `created_at`.
-
-### B) Upsert desde **PDF** (multipart)
->
-> Requiere `python-multipart` (incluido en `requirements.txt`).
-
-```bash
-curl -X POST "http://127.0.0.1:8000/upsert_pdf" \
-  -F "file=@data/raw/informe_sector_audiovisual_2025.pdf" \
-  -F "source=informe_sector_audiovisual_2025.pdf" \
-  -F "max_chars=1000" \
-  -F "overlap=120"
-```
-
-### C) Borrado por **source**
-
-```bash
-curl -X POST "http://127.0.0.1:8000/delete_by_source" \
-  -H "Content-Type: application/json" \
-  -d '{"source":"nota_prensa_2025"}'
-```
-
-### D) **Estadísticas**
-
-```bash
-curl "http://127.0.0.1:8000/stats"
+http://localhost:6333/dashboard
 ```
 
 ---
 
-## API (FastAPI)
+## 📥 Ingesta de documentos
 
-### GET `/health`
+```bash
+make extract
+make chunk
+make upsert
+```
 
-Comprueba variables de entorno y acceso a Qdrant. **200 OK**:
+---
+
+## ▶️ Arranque de la API
+
+```bash
+make api
+```
+
+- Swagger: http://127.0.0.1:8000/docs
+- Health: http://127.0.0.1:8000/health
+
+---
+
+## 🔌 Endpoints principales
+
+### Texto
+```http
+POST /ask
+```
 
 ```json
-{
-  "status": "ok",
-  "gemini_key": true,
-  "qdrant": true,
-  "model": "models/gemini-2.5-flash"
-}
+{ "question": "¿Qué puedo visitar en Córdoba en 3 días?" }
 ```
 
-### GET `/models`
-
-Lista los modelos de Gemini que soportan `generateContent`.
-
-### POST `/ask`
-
-Consulta con recuperación + re‑ranking + respuesta de Gemini **basada exclusivamente en el contexto**.
-
-**Body**:
-
-```json
-{
-  "question": "¿Qué cuota de facturación tiene Madrid en el mercado de animación?",
-  "top_k": 5,
-  "filter_text": "animación Madrid",
-  "debug": true
-}
+### Voz
+```http
+POST /voice
 ```
 
-**UI**
-![alt text](pictures/image.png)
+Audio recomendado:
+- WAV
+- 16 kHz
+- Mono
 
-**Ejemplo de respuesta**
-![alt text](pictures/image-1.png)
-
-### POST `/upsert`
-
-Inserta/actualiza embeddings desde **texto**. Ver sección [Ingesta](#ingesta--actualización-de-datos).
-
-### POST `/upsert_pdf`
-
-Inserta/actualiza desde **PDF** (multipart). Ver sección [Ingesta](#ingesta--actualización-de-datos).
-
-### POST `/delete_by_source`
-
-Elimina puntos cuyo `payload.source` coincida. Útil para reemplazar informes/ notas obsoletas.
-
-### GET `/stats`
-
-Devuelve el número de puntos y los recuentos por `source` para diagnóstico rápido.
+Ejemplo:
+```bash
+ffmpeg -i input.m4a -ar 16000 -ac 1 output.wav
+```
 
 ---
 
-## Cómo funciona la recuperación
+## 🤖 Integración con Telegram
 
-- **Embeddings**: `sentence-transformers intfloat/multilingual-e5-small` (configurable en `embeddings.py`) optimizado para español, 384 dimensiones.
-- **Qdrant**: distancia **COSINE**; se pide un `k` generoso para buen *recall* y se hace **re‑ranking local** por coseno con el vector de la pregunta.
-**Filtro semántico**: `filter_text` activa un `MatchText` sobre el campo `text` (índice creado por `scripts/create_qdrant_collection.py`).
-- **Prompting**: instrucción en español con *guardrail*: si la info **no está** en el contexto, **lo dice**.
+- Mensajes de texto → respuesta en texto.
+- Notas de voz → respuesta en audio.
 
----
+Configuración del webhook:
 
-## Solución de problemas
-
-- **Embeddings**: si hay errores al cargar el modelo, revisa embeddings.py y asegúrate de que `EMBEDDINGS_MODEL` está definido como `intfloat/multilingual-e5-small` en tu `.env`.
-- **Modelos Gemini**: si recibes error de modelo, revisa `GET /models` y ajusta `GEMINI_MODEL` en `.env`.
-- **Versión de Python**: si estás en 3.14 y alguna lib falla, usa 3.12 para máxima compatibilidad.
-- **Colección/índice**: ejecuta `PYTHONPATH=src python scripts/create_qdrant_collection.py` para crear o recrear colección e índice de texto.
+```bash
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"   -d "url=https://TU_SUBDOMINIO.ngrok-free.dev/telegram/webhook"
+```
 
 ---
 
-## 11) Autoría
+## 🧠 Integración con Dialogflow
 
-- Ana Belén Ballesteros Redondo  
-  🔗 [LinkedIn](https://www.linkedin.com/in/ana-belén-ballesteros-redondo/)
+- Intents con **Enable webhook call**.
+- Webhook configurado hacia:
+```
+/fulfillment
+```
 
-📑 **Memoria del proyecto:**  
-[Visualizar PDF](docs/memoria-informe-audiovisual-2025.pdf) — documento completo de diseño, resultados y análisis.
+---
+
+## 📄 Memoria del proyecto
+
+La memoria completa se encuentra en:
+
+```
+docs/memoria/Memoria_Asistente_Turistico_Cordoba.pdf
+```
+
+---
+
+## ✍️ Autora
+
+**Ana Belén Ballesteros Redondo**  
+Máster en IA, Cloud Computing y DevOps
+
